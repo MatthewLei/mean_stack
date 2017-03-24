@@ -1,5 +1,4 @@
 const http = require('http'),
-  util = require('util'),
   express = require('express'),
   path = require('path'),
   Db = require('mongodb').Db,
@@ -11,6 +10,7 @@ const http = require('http'),
 var app = express();
 const MAX_ITEM_PP = 10;
 const MAX_DB_DOC = 100;
+const ITEM_PP_DEFAULT = 10;
 
 app.set('port', process.env.PORT || 3000);
 app.set('views', path.join(__dirname, 'views'));
@@ -43,8 +43,6 @@ mongoClient.connect(url, function(err, db) {
   });
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
-
 app.get('/prod/load/:page/:itemsPerPage?', function(req, res) {
   var params = req.params;
   var page = params.page;
@@ -53,10 +51,10 @@ app.get('/prod/load/:page/:itemsPerPage?', function(req, res) {
   if (itemsPP > MAX_ITEM_PP) {
     return res.status(400).send('Too many items requested per page: ' + itemsPP);
   } else if (itemsPP == undefined) {
-    itemsPP = 10;
+    itemsPP = ITEM_PP_DEFAULT;
   }
 
-  if (page < 1) {
+  if (page < 1 || page % 3 == 0 || page % 5 == 0) {
     return res.status(400).send('Invalid page number requested: ' + page);
   }
 
@@ -77,9 +75,7 @@ app.get('/prod/load/:page/:itemsPerPage?', function(req, res) {
   });
 });
 
-
 app.use(function (req,res) {
-  console.log('catchall error');
   res.render('404', {url:req.url});
 });
 
