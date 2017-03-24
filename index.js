@@ -2,16 +2,15 @@ const http = require('http'),
   util = require('util'),
   express = require('express'),
   path = require('path'),
+  Db = require('mongodb').Db,
   MongoClient = require('mongodb').MongoClient,
   Server = require('mongodb').Server,
   pug = require('pug'),
-  CollectionDriver = require('./collectionDriver').CollectionDriver;
-
-var obj = require('./data');
-console.log(obj);
-
+  obj = require('./data');
 
 var app = express();
+const MAX_ITEM_PP = 10;
+const MAX_DB_DOC = 100;
 
 app.set('port', process.env.PORT || 3000);
 app.set('views', path.join(__dirname, 'views'));
@@ -20,8 +19,8 @@ app.set('view engine', 'pug');
 //set up mongodb
 var mongoHost = 'localHost'; //change if hosted elsewhere
 var mongoPort = 27017;
-var url = 'mongodb://' + mongoHost + ':' + mongoPort + '/MyDatabase';
-var collectionDriver;
+var url = 'mongodb://' + mongoHost + ':' + mongoPort + '/PersonDatabase';
+var collection;
 
 var mongoClient = new MongoClient(new Server(mongoHost, mongoPort));
 mongoClient.connect(url, function(err, db) {
@@ -29,61 +28,53 @@ mongoClient.connect(url, function(err, db) {
       console.error("Error! Exiting... Must start MongoDB first");
       process.exit(1);
   }
-  collectionDriver = new CollectionDriver(db);
+
+  db.collection('PersonCollection', {strict:true}, function(err, result){
+    if (err) {
+      db.createCollection('PersonCollection', {max:MAX_DB_DOC}, function(err, result){
+        console.log('new collection created');
+        collection = db.collection('PersonCollection');
+        collection.insert(obj);
+      });
+    } else {
+      console.log('using existing collection');
+      collection = db.collection('PersonCollection');
+    }
+  });
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
-
-// app.get('/prod/load/:page', function(req, res) {
-//   var params = req.params;
-//   console.log('req.params: ' + params);
-//
-//   collectionDriver.findAll(req.params.collection, function(error, objs) {
-//     if (error) {
-//       res.status(400).send(error);
-//     } else if (objs == '') {
-//       res.status(204).send('No objects obtained');
-//     } else {
-//       console.log('req.get("Accept"): ' + req.get('Accept'));
-//       if (req.accepts('*/*') || req.accepts('application/json')) {
-//         res.set('Content-Type','application/json');
-//         res.status(200).send(objs);
-//         // res.render('data',{objects: objs, collection: req.params.collection});
-//       } else if (req.accepts('application/xml')) {
-//         objs.forEach(function(item) {
-//           //wonky _id invalid char bug
-//           item._id = item._id.toString();
-//         });
-//         res.set('Content-Type', 'application/xml');
-//         var xmlObjs = xmlParser.parse('Documents', objs);
-//         res.status(200).send(xmlObjs + '\n');
-//       } else {
-//         res.status(406).send('Not acceptable Accept type');
-//       }
-//     }
-//   });
-// });
 
 app.get('/prod/load/:page/:itemsPerPage?', function(req, res) {
   var params = req.params;
   var page = params.page;
   var itemsPP = params.itemsPerPage;
-  console.log('page: ' + page);
-  console.log('itemsPP: ' + itemsPP);
 
-  if (itemsPP == undefined) {
+  if (itemsPP > MAX_ITEM_PP) {
+    return res.status(400).send('Too many items requested per page: ' + itemsPP);
+  } else if (itemsPP == undefined) {
     itemsPP = 10;
   }
 
-  // if (entity) {
-  //   collectionDriver.get(collection, entity, function(error, objs) {
-  //     if (error) { res.status(400).send(error); }
-  //     else { res.send(200, objs); }
-  //   });
-  // } else {
-  //   res.send(400, {error: 'bad url', url: req.url});
-  // }
-  res.status(400).send('Temp error');
+  if (page < 1) {
+    return res.status(400).send('Invalid page number requested: ' + page);
+  }
+
+  var upperBound = itemsPP * page;
+  var lowerBound = upperBound - (itemsPP - 1);
+
+  var query = {Number: {$gte: lowerBound, $lte: upperBound}};
+  collection.find(query).toArray(function(err, result){
+    if (err) {
+      res.status(400).send(err);
+    } else {
+      //remove _id field
+      result.forEach(function(item){
+        delete item._id;
+      });
+      res.status(200).send(result);
+    }
+  });
 });
 
 
